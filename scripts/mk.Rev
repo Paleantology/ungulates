@@ -1,0 +1,49 @@
+bears <- readDiscreteCharacterData("bears.nex")
+
+#Helper variables
+taxa <- bears.names()
+num_taxa <- bears.size()
+n_branches <- 2 * num_taxa - 2
+
+#Workspace objects
+
+moves = VectorMoves()
+monitors = VectorMonitors()
+
+# The actual phylogenetic model
+
+br_len_lambda ~ dnExp(0.2)
+moves.append( mvScale(br_len_lambda, weight=2) )
+
+phylogeny ~ dnUniformTopologyBranchLength(taxa, branchLengthDistribution=dnExponential(br_len_lambda))
+moves.append( mvNNI(phylogeny, weight=n_branches/2.0) )
+moves.append( mvSPR(phylogeny, weight=n_branches/10.0) )
+moves.append( mvBranchLengthScale(phylogeny, weight=n_branches) )
+
+# deterministic operator: :=
+tree_length := phylogeny.treeLength()
+
+Q_morpho <- fnJC(2)
+
+# Gamma-Distributed Rate Variation
+
+alpha_morpho ~ dnUniform( 0, 1E6 )
+rates_morpho := fnDiscretizeGamma( alpha_morpho, alpha_morpho, 4 )
+
+#Moves on the parameters to the Gamma distribution.
+moves.append( mvScale(alpha_morpho, lambda=1, weight=2.0) )
+
+phyMorpho ~ dnPhyloCTMC(tree=phylogeny, siteRates=rates_morpho, Q=Q_morpho, type="Standard")
+phyMorpho.clamp(bears)
+
+# Running the model
+
+mymodel = model(phylogeny)
+
+monitors.append( mnModel(filename="output/mk.log", printgen=10) )
+monitors.append( mnFile(filename="output/mk.trees", printgen=10, phylogeny) )
+monitors.append( mnScreen(printgen=100) )
+
+mymcmc = mcmc(mymodel, monitors, moves, nruns=2, combine="mixed")
+mymcmc.run(generations=20000, tuningInterval=200)
+q()

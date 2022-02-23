@@ -1,0 +1,190 @@
+################################################################################
+#
+# RevBayes script: A simple FBD analysis
+#
+# This file: Runs the full MCMC ...
+#
+# authors: Tracy A. Heath, Josh Justison, Joëlle Barido-Sottani, and Walker Pett
+#
+################################################################################
+
+#######################
+# Reading in the Data #
+#######################
+# Read the full list of taxa (including all fossils and extant species #
+taxa <- readTaxonData("data/ages.tsv")
+
+# Import the morphological character matrix #
+# this file contains only the taxa for which morphological characters are available #
+morpho <- readDiscreteCharacterData("data/matrix.nex")
+
+## helpers
+n_taxa <- taxa.size()
+moves = VectorMoves()
+
+##########################################################################################
+# Joint Fossilized Birth-Death Process prior on the topology and fossil occurrence times #
+##########################################################################################
+
+# Define exponential priors on the birth rate and death rate #
+speciation_rate ~ dnExponential(10)
+extinction_rate ~ dnExponential(10)
+
+# Specify a scale move on the speciation_rate parameter #
+# This move will be applied with 3 different tuning values (lambda) to help improve mixing #
+moves.append( mvScale(speciation_rate, weight=1) )
+
+# Specify a scale move on the extinction_rate parameter #
+# This move will be applied with 3 different tuning values (lambda) to help improve mixing #
+moves.append( mvScale(extinction_rate, weight=1) )
+
+# Create deterministic nodes for the diversification and turnover rates so that they can be monitored #
+diversification := speciation_rate - extinction_rate
+turnover := extinction_rate/speciation_rate
+
+
+# Fix the probability of sampling parameter (rho) to 1, #
+# because all extant bears are represented in this analysis #
+rho <- 0
+
+# Assume an exponential prior on the rate of sampling fossils (psi) #
+psi ~ dnExponential(10)
+
+# Specify a scale move on the psi parameter #
+# This move will be applied with 3 different tuning values (lambda) to help improve mixing #
+moves.append( mvScale(psi, weight=1) )
+
+
+# The FBD is conditioned on a starting time for the process, which is the origin time #
+# Specify a uniform prior on the origin #
+origin_time ~ dnUnif(75.0, 150)
+origin_time
+# Specify a sliding-window move on the origin_time parameter #
+# This move will be applied with 3 different window widths (delta) to help improve mixing #
+moves.append( mvSlide(origin_time, weight=1.0) )
+
+clade_periss= clade("Cambaytherium", "Nakusia", "Pilgrimella", "Anthracobune")
+clade_lept = clade("Victorlemoinea", "Adiantoides", "Theosodon", "Cramauchenia", "Thoatherium", "Diadiaphorus", "Tetramerorhinus")
+clade_didol = clade("Didolodus", "Lamegoia", "Depaulacoutia", "Miguelsoria", "Protolipterna")
+clade_koll = clade("Pucanodus", "Simoclaeunus", "Molinodus", "Tiuclaenus")
+clade_afro = clade("Microhyrax", "Dimaitherium", "Saghatherium", "Eritherium", "Numidotherium", "Moeritherium", "Phosphatherium")
+clade_phena = clade("Phenacolophus", "Meniscotherium", "Ectocion", "Tetraclaenodon", "Radinskya", "Phenacodus")
+clade_pleura = clade("Pleuraspidotherium", "Orthaspidotherium")
+constraints = v(clade_periss, clade_lept, clade_didol, clade_koll, clade_afro, clade_phena, clade_pleura)
+
+### Define the tree-prior distribution as the fossilized birth-death process ###
+fbd_dist = dnFBDP(origin=origin_time, lambda=speciation_rate, mu=extinction_rate, psi=psi, rho=rho, taxa=taxa, condition="sampling")
+fbd_tree ~ dnConstrainedTopology(fbd_dist, constraints=constraints)
+
+# Specify moves on the tree and node times #
+# These moves update the tree topology
+moves.append( mvFNPR(fbd_tree, weight=15.0) )
+moves.append( mvCollapseExpandFossilBranch(fbd_tree, origin_time, weight=6.0) )
+
+# These moves update the node ages #
+# Because we are conditioning on the origin time, we must also sample the root node age #
+moves.append( mvNodeTimeSlideUniform(fbd_tree, weight=40.0) )
+moves.append( mvRootTimeSlideUniform(fbd_tree, origin_time, weight=5.0) )
+
+
+### Use stratigraphic range data to explicitly sample the fossil occurence times ###
+# Use a for loop to create a uniform distribution on the occurence time for each fossil #
+# The boundaries of the uniform distribution are specified in the tsv file #
+fossils = fbd_tree.getFossils()
+for(i in 1:fossils.size())
+{
+    t[i] := tmrca(fbd_tree, clade(fossils[i]))
+    a_i = fossils[i].getMinAge()
+    b_i = fossils[i].getMaxAge()
+    F[i] ~ dnUniform(b_i, a_i)
+}
+
+# Add a move to sample the fossil times #
+
+     moves.append(mvFNPR(fbd_tree, weight=15.0))
+
+     moves.append(mvCollapseExpandFossilBranch(fbd_tree, origin_time, weight=6.0))
+
+     moves.append(mvNodeTimeSlideUniform(fbd_tree, weight=40.0))
+
+     moves.append(mvRootTimeSlideUniform(fbd_tree, origin_time, weight=5.0))
+
+
+### Create deterministic nodes to monitor various tree statistics ###
+# Monitor the number of sampled ancestors in the FBD-tree #
+num_samp_anc := fbd_tree.numSampledAncestors();
+
+###########################################
+# Multistate morphological substitution model #
+###########################################
+
+# We assume a relaxed morphological clock rate, drawn from an exponential prior #
+clock_morpho ~ dnExponential(1.0)
+
+moves.append( mvScale(clock_morpho, lambda=0.01, weight=4.0) )
+moves.append( mvScale(clock_morpho, lambda=0.1,  weight=4.0) )
+moves.append( mvScale(clock_morpho, lambda=1,    weight=4.0) )
+
+alpha_morpho ~ dnUniform( 0, 1E6 )
+rates_morpho := fnDiscretizeGamma( alpha_morpho, alpha_morpho, 4 )
+#Moves on the parameters to the Gamma distribution.
+moves.append(mvScale(alpha_morpho, lambda=1, weight=2.0))
+
+
+n_max_states <- 7
+idx = 1
+morpho_bystate[1] <- morpho
+for (i in 1:n_max_states) {
+    # make local tmp copy of data
+    # only keep character blocks with state space equal to size i
+    morpho_bystate[i] <- morpho
+    morpho_bystate[i].setNumStatesPartition(i)
+	# get number of characters per character size wth i-sized states
+    nc = morpho_bystate[i].nchar()
+    # for non-empty character blocks
+    if (nc > 0) {
+        # make i-by-i rate matrix
+        q[idx] <- fnJC(i)
+# create model of evolution for the character block
+        m_morph[idx] ~ dnPhyloCTMC( tree=fbd_tree,
+                                    Q=q[idx],
+                                    nSites=nc,
+                                    siteRates=rates_morpho,
+                                    branchRates=clock_morpho,
+                                    type="Standard")
+
+        # attach the data
+	    m_morph[idx].clamp(morpho_bystate[i])
+        # increment counter
+        idx = idx + 1
+}
+}
+
+
+########
+# MCMC #
+########
+
+# initialize the model object #
+mymodel = model(fbd_tree)
+
+monitors = VectorMonitors()
+
+# Create a vector of monitors #
+# 1. for the full model #
+monitors.append( mnModel(filename="output/mammals3.log", printgen=10, exclude = ["F"]) )
+
+# 2. the tree #
+monitors.append( mnFile(filename="output/mammals3.trees", printgen=10, fbd_tree) )
+
+# 3. and a few select parameters to be printed to the screen #
+monitors.append( mnScreen(printgen=10, num_samp_anc, origin_time) )
+
+# Initialize the MCMC object #
+mymcmc = mcmc(mymodel, monitors, moves)
+
+# Run the MCMC #
+mymcmc.run(generations=1000000)
+
+# Quit RevBayes #
+q()
