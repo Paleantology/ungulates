@@ -17,6 +17,25 @@ taxa <- readTaxonData("data/ages.tsv")
 # Import the morphological character matrix #
 # this file contains only the taxa for which morphological characters are available #
 morpho <- readDiscreteCharacterData("data/matrix.nex")
+filenames <- v("data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_A2AB.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_BMI1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_EDG1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_PNOC.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_ADORA3.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_BRCA1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_ENAM.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_RAG1a.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_ADRB2.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_BRCA2.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_FBN1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_RAG1b.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_APOB.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_CNR1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_GHR.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_RAG2.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_APP.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_COI.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_IRBP.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_TTN.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_ATP7.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_CREM.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_ND1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_TYR1.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_BCHE.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_CYTB.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_ND2.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_VWF.nex",
+"data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_BDNF.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_DMP1.nex", "data/molecular_alignments/FIN3_pruned1_zPrunedMisID_zNumOK_PLCB4.nex")
+n_data_subsets <- filenames.size()
+for (i in 1:n_data_subsets) {
+   data[i] = readDiscreteCharacterData(filenames[i])
+}
+
+for (i in 1:n_data_subsets) {
+    data[i].addMissingTaxa( taxa )
+}
+
+morpho.addMissingTaxa( taxa )
+
 
 ## helpers
 n_taxa <- taxa.size()
@@ -159,6 +178,10 @@ for (i in 1:n_max_states) {
         idx = idx + 1
 }
 }
+source("scripts/model_UExp_TEFBD.Rev") # UExp relaxed clock
+
+source("scripts/model_GTRG_TEFBD.Rev") # Molecular substitution model (GTR+G)
+
 
 
 ########
